@@ -1,0 +1,16 @@
+# Format für Lautstärke-Controller: controllerNum=SINK_NUM
+16=alsa_output.pci-0000_0d_00.4.analog-stereo
+17=alsa_output.pci-0000_0d_00.4.iec958-ac3-surround-51
+18=alsa_output.usb-Burr-Brown_from_TI_USB_audio_CODEC-00.analog-stereo
+
+# Media-Buttons - keine Sink, nur Aktionen
+41=play
+42=stop
+43=prev
+44=next
+
+# Default-Sink Switcher (z.B. Controller 60)
+46=defaultsink
+
+# LEDs auf Buttons leuchten (bei Dienststart)
+leds=41,42,43,44,46
