@@ -79,16 +79,19 @@ Den Namen aus der zweiten Spalte (z. B. `alsa_output.pci-0000_00_1b.0.analog-ste
 Lege eine Dienstdatei an, z.B. `~/.config/systemd/user/midicontrol.service`:
 
 ```ini
-[Unit]
-Description=PulseAudio Sink Control mit Korg NanoKontrol2
+Unit]
+Description=MIDI PulseAudio Volume Control
+After=sound.target
 
 [Service]
-Type=simple
-ExecStart=/home/<BENUTZERNAME>/.local/bin/midicontrol.sh
-Restart=on-failure
+ExecStartPre=/bin/sleep 10
+ExecStart=/home/[USER]/scripts/midicontrol/midicontrol.sh
+Restart=always
+WorkingDirectory=/home/[USER]/scripts/midicontrol
 
 [Install]
 WantedBy=default.target
+
 ```
 
 Aktiviere und starte den Dienst:
