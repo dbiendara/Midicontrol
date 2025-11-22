@@ -121,9 +121,4 @@ Viele Controller erlauben das Customizing der CCs über einen Editor wie den Kor
 - Prüfe, dass dein Benutzer PulseAudio steuern darf (idR. gegeben bei normalen Desktopnutzern).
 - Prüfe die systemd-Logs auf Fehlerausgaben, falls der Autostartdienst nicht arbeitet.
 
-
-## Lizenz
-
-MIT oder GPL (je nach Präferenz, siehe Quelltext)
-
 ***
