@@ -1,7 +1,7 @@
 #!/bin/bash
 
 CONFIG_FILE="./config.txt"
-MIDI_OUT_PORT="hw:4,0,0"   # Stelle das ggf. auf dein Gerät/Port ein
+MIDI_OUT_PORT="hw:0,0,0"   # Stelle das ggf. auf dein Gerät/Port ein
 
 # Liest Mapping aus config.txt je Controller
 get_mapping() {
