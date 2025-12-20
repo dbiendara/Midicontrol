@@ -51,6 +51,12 @@ Die Datei `midicontrol.conf` enthält die Zuweisung der MIDI-Controller-Elemente
 - Der `Sink-Name` muss exakt mit dem PulseAudio-Sink übereinstimmen (siehe nächster Abschnitt).
 
 
+## ControlNummer herausfinden
+```sh
+aseqdump -p \"nanoKONTROL2\"
+```
+Dann am Regler drehen und die Nummer notieren.
+
 ## PulseAudio Sink-Namen herausfinden
 
 Führe folgendes Kommando im Terminal aus, um alle verfügbaren Sinks aufzulisten:
