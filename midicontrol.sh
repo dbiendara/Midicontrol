@@ -1,11 +1,8 @@
 #!/bin/bash
 
 CONFIG_FILE="./config.txt"
-# MIDI_OUT_PORT="hw:0,0,0"   # Stelle das ggf. auf dein Gerät/Port ein
-# Port Autoerkennung
+# Port Autoerkennung für nanoKONTROL2
 MIDI_OUT_PORT=$(amidi -l | grep "nanoKONTROL2" | awk '{print $2}')
-
-
 
 # Liest Mapping aus config.txt je Controller
 get_mapping() {
@@ -38,66 +35,68 @@ led_off() {
     amidi -p "$MIDI_OUT_PORT" -S "B0 $HEX 00"
 }
 
-# Default-Sinks-Liste anhand aktueller Sinks
-SINKS=($(pactl list sinks short | cut -f2))
+# Default-Sinks-Liste
 DEFAULT_SINK_INDEX=0
-
 switch_sink() {
-  # Aktuelle Sinks neu abrufen, um Änderungen zu berücksichtigen
   SINKS=($(pactl list sinks short | cut -f2))
   DEFAULT_SINK_INDEX=$(( (DEFAULT_SINK_INDEX + 1) % ${#SINKS[@]} ))
   pactl set-default-sink "${SINKS[$DEFAULT_SINK_INDEX]}"
   echo "Default sink switched to: ${SINKS[$DEFAULT_SINK_INDEX]}"
 }
 
-
-# Initialisierung: LEDs an
+# Initialisierung
 init_leds
 
-# MIDI-Events abarbeiten
+# MIDI-Loop
 aseqdump -p "nanoKONTROL2" | while read LINE; do
     if [[ "$LINE" =~ controller\ ([0-9]+),\ value\ ([0-9]+) ]]; then
         CTRL=${BASH_REMATCH[1]}
         VALUE=${BASH_REMATCH[2]}
         MAPPING=$(get_mapping $CTRL)
 
-        # Media-Buttons / andere Features über Namen
         case "$MAPPING" in
-            play)
-                if [ "$VALUE" -gt 0 ]; then
-                    xdotool key XF86AudioPlay
-                    echo "Play"
-                fi
-                ;;
-            stop)
-                if [ "$VALUE" -gt 0 ]; then
-                    xdotool key XF86AudioStop
-                    echo "Stop"
-                fi
-                ;;
-            prev)
-                if [ "$VALUE" -gt 0 ]; then
-                    xdotool key XF86AudioPrev
-                    echo "Previous"
-                fi
-                ;;
-            next)
-                if [ "$VALUE" -gt 0 ]; then
-                    xdotool key XF86AudioNext
-                    echo "Next"
-                fi
-                ;;
-            defaultsink)
-                if [ "$VALUE" -gt 0 ]; then
-                    switch_sink
-                fi
-                ;;
+            play) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioPlay ;;
+            stop) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioStop ;;
+            prev) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioPrev ;;
+            next) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioNext ;;
+            defaultsink) [ "$VALUE" -gt 0 ] && switch_sink ;;
             *)
-                # Wenn Mapping existiert und KEIN Aktionswort ist, dann PulseAudio Sink-Name!
+                # Volumesteuerung
                 if [ ! -z "$MAPPING" ] && [[ "$VALUE" =~ ^[0-9]+$ ]]; then
                     VOL=$(echo "$VALUE * 100 / 127" | bc)
-                    pactl set-sink-volume "$MAPPING" "${VOL}%"
-                    echo "Controller $CTRL, Wert $VALUE => Setze Sink $MAPPING Lautstärke auf $VOL%"
+                    
+                    if [[ "$MAPPING" == source:* ]]; then
+                        # --- SOURCE (Mikrofon) ---
+                        REAL_SOURCE=${MAPPING#source:}
+                        pactl set-source-volume "$REAL_SOURCE" "${VOL}%"
+                        # echo "Source $REAL_SOURCE -> $VOL%"
+
+                    elif [[ "$MAPPING" == app:* ]]; then
+                        # --- APP GROUP (Sink Inputs) ---
+                        APP_SEARCH=${MAPPING#app:}
+                        
+                        # AWK sucht IDs anhand des Regex-Strings (Case-Insensitive)
+                        PIDS=$(pactl list sink-inputs | awk -v app="$APP_SEARCH" '
+                            BEGIN {IGNORECASE=1} 
+                            /^Sink Input/ {id=$3} 
+                            /application.name/ && $0 ~ app {print id}
+                            /media.name/ && $0 ~ app {print id}
+                        ' | tr -d '#' | sort -u)  # <--- sort -u verhindert Duplikate
+
+                        if [ ! -z "$PIDS" ]; then
+                            # Loop über alle gefundenen IDs (z.B. Firefox UND MPV)
+                            for PID in $PIDS; do
+                                pactl set-sink-input-volume "$PID" "${VOL}%"
+                            done
+                            # Debug-Output gekürzt
+                            echo "Apps ($APP_SEARCH) -> IDs $PIDS auf $VOL%"
+                        fi
+
+                    else
+                        # --- SINK (Lautsprecher) ---
+                        pactl set-sink-volume "$MAPPING" "${VOL}%"
+                        # echo "Sink $MAPPING -> $VOL%"
+                    fi
                 fi
                 ;;
         esac

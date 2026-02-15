@@ -3,6 +3,9 @@
 17=alsa_output.pci-0000_0d_00.4.iec958-ac3-surround-51
 18=alsa_output.usb-Burr-Brown_from_TI_USB_audio_CODEC-00.analog-stereo
 19=alsa_output.pci-0000_0b_00.1.hdmi-stereo
+0=source:alsa_input.usb-Burr-Brown_from_TI_USB_audio_CODEC-00.mono-fallback
+2=app:mpv
+7=app:vivaldi|firefox
 
 # Media-Buttons - keine Sink, nur Aktionen
 41=play
