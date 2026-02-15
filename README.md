@@ -10,13 +10,12 @@ It allows you to control input/output devices, mute states with LED feedback, an
     
     **🎚️ Hardware Sink Control:** Control system volume or specific output devices.
     
-- **🎤 Microphone/Source Control:** Adjust input gain for microphones or virtual devices like **EasyEffects**.
-- **📦 App Groups (Regex):** Map multiple apps to one slider using a simple pipe syntax (e.g., `app:spotify|vlc|mpv`).
-- **🔇 Bi-directional Mute:**
-    - Buttons toggle mute state.
-    - **LED Feedback:** The button lights up if the device is muted, syncing with the actual PulseAudio state.
+- **🎤 Microphone/Source Control:** Adjust input gain (perfect for **EasyEffects** or virtual devices).
+- **📦 App Groups (Regex):** Map multiple apps to one slider (e.g., `Spotify|VLC|MPV`).
+- **🔇 Bi-directional Mute:** Buttons toggle mute state with **LED Feedback** that syncs with the actual system state.
 - **🛡️ Safety Unmute:** Moving a volume fader automatically unmutes the target.
-- **🧙 Interactive Wizard:** A setup script (`configure.sh`) detects your controller input and lets you map functions without manual editing.
+- **💤 Standby/Resume Support:** Automatically resyncs and restores all LED states when the system wakes up from sleep using D-Bus monitoring.
+- **🧙 Interactive Wizard:** A setup script (`configure.sh`) detects your controller input for easy mapping.
 - **⚡ Lightweight:** Runs as a systemd user service with zero GUI overhead.
 
 ## 🛠 Prerequisites
@@ -29,23 +28,24 @@ You need a Linux system running **PulseAudio** or **PipeWire** (with `pipewire-p
 - `xdotool`: For media keys like Play/Pause.
 - `bc`: For volume math.
 - `pulseaudio-utils`: Provides `pactl`.
+- `dbus`: Required for the Standby/Resume listener.
 
 ### Installation on Arch Linux
 
-`sudo pacman -S alsa-utils xdotool bc pulseaudio-utils`
+`sudo pacman -S alsa-utils xdotool bc pulseaudio-utils dbus`
 
 ### Installation on Debian / Ubuntu
 
-`sudo apt install alsa-utils xdotool bc pulseaudio-utils`
+`sudo apt install alsa-utils xdotool bc pulseaudio-utils dbus`
 
 ## 📦 Installation
 
-1. Clone the repository
+1. Clone the repository:
     
     `git clone https://github.com/dbiendara/Midicontrol.git
     cd Midicontrol`
     
-2. Make the scripts executable
+2. Make the scripts executable:
     
     `chmod +x midicontrol.sh configure.sh`
     
@@ -80,7 +80,7 @@ The format is `CONTROLLER_ID=VALUE`.
 
 ### 3. Initial LED State
 
-List buttons to be lit at startup: `leds=41,42,43,44`.
+List buttons to be lit at startup: `leds=41,42,43,44,46`.
 
 ## 🖥️ Autostart (Systemd Service)
 
@@ -101,7 +101,7 @@ List buttons to be lit at startup: `leds=41,42,43,44`.
     [Install]
     WantedBy=default.target`
     
-3. Enable and start:Bash
+3. Enable and start:
     
     `systemctl --user daemon-reload
     systemctl --user enable --now midicontrol.service`
@@ -109,9 +109,9 @@ List buttons to be lit at startup: `leds=41,42,43,44`.
 
 ## 🔍 Troubleshooting
 
-- **Mute LEDs not working:** The script uses `LC_ALL=C` to force English output from `pactl`. If they still don't work, ensure your user has access to `amidi` and the MIDI port is not blocked.
+- **Mute LEDs not working:** The script uses `LC_ALL=C` to force English output from `pactl`. Ensure your user has access to `amidi` and the MIDI port is not blocked.
 - **App Volume:** App matching is case-insensitive. Use `pactl list sink-inputs` to find the exact `application.name`.
-- **Device Busy:** Ensure no other MIDI mappers or DAWs are running that might grab exclusive control of the port.
+- **Wake-up issues:** The Standby/Resume feature requires `dbus-monitor` to be running. It waits 2 seconds after wake-up to ensure USB devices are ready before resyncing.
 
 ## 📄 License
 
