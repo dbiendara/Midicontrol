@@ -124,9 +124,6 @@ aseqdump -p "nanoKONTROL2" | while read LINE; do
                 if [ "$VALUE" -gt 0 ]; then
                     REAL_SOURCE=${MAPPING#mute_source:}
                     pactl set-source-mute "$REAL_SOURCE" toggle
-                    # Nach dem Toggle-Befehl:
-                    [[ "$STATUS" == *"yes"* ]] && M_STATE="true" || M_STATE="false"
-                    qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.microphoneMuted $M_STATE
                     update_mute_led "$CTRL" "$MAPPING"
                 fi
                 ;;
