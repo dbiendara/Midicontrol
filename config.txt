@@ -18,3 +18,4 @@
 
 # LEDs auf Buttons leuchten (bei Dienststart)
 leds=41,42,43,44,46
+48=mute_source:alsa_input.usb-Burr-Brown_from_TI_USB_audio_CODEC-00.mono-fallback
