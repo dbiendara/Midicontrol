@@ -145,12 +145,19 @@ aseqdump -p "nanoKONTROL2" | while read LINE; do
                     VOL=$(echo "$VALUE * 100 / 127" | bc)
                     
                     if [[ "$MAPPING" == source:* ]]; then
+                        # --- SOURCE (Mikrofon) ---
                         REAL_SOURCE=${MAPPING#source:}
                         pactl set-source-volume "$REAL_SOURCE" "${VOL}%"
-                        # Sicherheits-Unmute beim Bewegen des Sliders
-                        pactl set-source-mute "$REAL_SOURCE" 0 
+                        pactl set-source-mute "$REAL_SOURCE" 0 # Sicherheits-Unmute
+
+                        # NEU: Finde den zugehörigen Mute-Button in der Config und aktualisiere die LED
+                        MUTE_CTRL=$(grep "=mute_source:$REAL_SOURCE" "$CONFIG_FILE" | cut -d= -f1)
+                        if [ -n "$MUTE_CTRL" ]; then
+                            update_mute_led "$MUTE_CTRL" "mute_source:$REAL_SOURCE"
+                        fi
 
                     elif [[ "$MAPPING" == app:* ]]; then
+                        # --- APP-GRUPPEN ---
                         APP_SEARCH=${MAPPING#app:}
                         PIDS=$(pactl list sink-inputs | awk -v app="$APP_SEARCH" 'BEGIN {IGNORECASE=1} /^Sink Input/ {id=$3} /application.name/ && $0 ~ app {print id} /media.name/ && $0 ~ app {print id}' | tr -d '#' | sort -u)
                         if [ ! -z "$PIDS" ]; then
@@ -158,8 +165,15 @@ aseqdump -p "nanoKONTROL2" | while read LINE; do
                         fi
 
                     else
+                        # --- SINK (Lautsprecher) ---
                         pactl set-sink-volume "$MAPPING" "${VOL}%"
                         pactl set-sink-mute "$MAPPING" 0
+
+                        # NEU: Finde den zugehörigen Mute-Button für den Lautsprecher
+                        MUTE_CTRL=$(grep "=mute_sink:$MAPPING" "$CONFIG_FILE" | cut -d= -f1)
+                        if [ -n "$MUTE_CTRL" ]; then
+                            update_mute_led "$MUTE_CTRL" "mute_sink:$MAPPING"
+                        fi
                     fi
                 fi
                 ;;
