@@ -53,11 +53,19 @@ update_mute_led() {
     if [[ "$mapping" == mute_source:* ]]; then
         REAL_SOURCE=${mapping#mute_source:}
         STATUS=$(LC_ALL=C pactl get-source-mute "$REAL_SOURCE" 2>/dev/null)
-        [[ "$STATUS" == *"yes"* ]] && is_muted="yes"
+        
+        if [[ "$STATUS" == *"yes"* ]]; then 
+            is_muted="yes"
+        fi
+
+        # KDE Plasma 6 Fix: Trigger ohne Argumente zeigt den aktuellen Status
+        qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.microphoneMuted >/dev/null 2>&1
+        
     elif [[ "$mapping" == mute_sink:* ]]; then
         REAL_SINK=${mapping#mute_sink:}
         STATUS=$(LC_ALL=C pactl get-sink-mute "$REAL_SINK" 2>/dev/null)
         [[ "$STATUS" == *"yes"* ]] && is_muted="yes"
+        # Sink-Mute wird meist über das Volume-OSD mit abgedeckt
     fi
 
     if [ "$is_muted" == "yes" ]; then led_on "$ctrl"; else led_off "$ctrl"; fi
@@ -81,18 +89,12 @@ init_leds
 sync_all_mute_leds
 
 
-# --- NEU: Wake-up Listener ---
-# Lauscht auf das D-Bus Signal für das Ende des Standbys
+# Wake-up Listener (Fix: 2>/dev/null unterdrückt die AccessDenied Meldung)
 (
-    # Wir warten auf PrepareForSleep(false)
-    dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" | while read line; do
+    dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" 2>/dev/null | while read line; do
         if [[ "$line" == *"boolean false"* ]]; then
-            # Kurz warten, bis USB-Hardware wieder komplett initialisiert ist
             sleep 2
-            echo "System wake-up erkannt. Synchronisiere LEDs..."
-            # Port neu erkennen, falls er sich geändert hat
             MIDI_OUT_PORT=$(amidi -l | grep "nanoKONTROL2" | awk '{print $2}')
-            # Funktionen aus dem bestehenden Skript aufrufen
             init_leds
             sync_all_mute_leds
         fi
@@ -122,6 +124,9 @@ aseqdump -p "nanoKONTROL2" | while read LINE; do
                 if [ "$VALUE" -gt 0 ]; then
                     REAL_SOURCE=${MAPPING#mute_source:}
                     pactl set-source-mute "$REAL_SOURCE" toggle
+                    # Nach dem Toggle-Befehl:
+                    [[ "$STATUS" == *"yes"* ]] && M_STATE="true" || M_STATE="false"
+                    qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.microphoneMuted $M_STATE
                     update_mute_led "$CTRL" "$MAPPING"
                 fi
                 ;;
@@ -141,19 +146,26 @@ aseqdump -p "nanoKONTROL2" | while read LINE; do
                         REAL_SOURCE=${MAPPING#source:}
                         pactl set-source-volume "$REAL_SOURCE" "${VOL}%"
                         pactl set-source-mute "$REAL_SOURCE" 0 
+                        # KDE OSD für Mikrofon-Lautstärke
+                        qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.microphoneVolumeChanged $VOL
+                        
                         MUTE_CTRL=$(grep "=mute_source:$REAL_SOURCE" "$CONFIG_FILE" | cut -d= -f1)
                         [ -n "$MUTE_CTRL" ] && update_mute_led "$MUTE_CTRL" "mute_source:$REAL_SOURCE"
 
                     elif [[ "$MAPPING" == app:* ]]; then
+                        # ... App-Logik bleibt gleich ...
                         APP_SEARCH=${MAPPING#app:}
                         PIDS=$(pactl list sink-inputs | awk -v app="$APP_SEARCH" 'BEGIN {IGNORECASE=1} /^Sink Input/ {id=$3} /application.name/ && $0 ~ app {print id} /media.name/ && $0 ~ app {print id}' | tr -d '#' | sort -u)
                         if [ ! -z "$PIDS" ]; then
                             for PID in $PIDS; do pactl set-sink-input-volume "$PID" "${VOL}%"; done
                         fi
-
                     else
+                        # SINK (Standard Lautsprecher)
                         pactl set-sink-volume "$MAPPING" "${VOL}%"
                         pactl set-sink-mute "$MAPPING" 0
+                        # KDE OSD für Master/Sink-Lautstärke
+                        qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.volumeChanged $VOL
+                        
                         MUTE_CTRL=$(grep "=mute_sink:$MAPPING" "$CONFIG_FILE" | cut -d= -f1)
                         [ -n "$MUTE_CTRL" ] && update_mute_led "$MUTE_CTRL" "mute_sink:$MAPPING"
                     fi
