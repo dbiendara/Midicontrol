@@ -1,130 +1,120 @@
-# Midicontrol
+# Unbenannt
 
-**Konfigurierbare PulseAudio-Sink-Steuerung mit Korg NanoKontrol2**
+# Midicontrol - Advanced Linux MIDI Volume Mixer
 
-## Übersicht
+**Midicontrol** is a powerful, lightweight Bash script that turns your MIDI controller (optimized for **Korg nanoKONTROL2**) into a fully functional physical mixer for Linux audio (PulseAudio / PipeWire).
 
-Midicontrol ermöglicht es, mit einem Korg NanoKontrol2 MIDI-Controller verschiedene PulseAudio-Sinks (z.B. Lautsprecher, Kopfhörer, virtuelle Geräte) direkt und individuell über die Fader und Buttons zu steuern. Ziel ist eine flexible Integration des Controllers, vor allem für Streaming, Home-Studios und das produktive Arbeiten mit mehreren Audioquellen.
+It allows you to control input/output devices, mute states with LED feedback, and even group specific applications onto a single fader using Regex.
 
-## Features
+## 🚀 Key Features
 
-- Steuerung beliebiger PulseAudio-Sinks mittels Fader, Knöpfen etc.
-- Flexible Konfiguration per Textdatei
-- Schnelle Integration in bestehende Systeme
+- 
+    
+    **🎚️ Hardware Sink Control:** Control system volume or specific output devices.
+    
+- **🎤 Microphone/Source Control:** Adjust input gain for microphones or virtual devices like **EasyEffects**.
+- **📦 App Groups (Regex):** Map multiple apps to one slider using a simple pipe syntax (e.g., `app:spotify|vlc|mpv`).
+- **🔇 Bi-directional Mute:**
+    - Buttons toggle mute state.
+    - **LED Feedback:** The button lights up if the device is muted, syncing with the actual PulseAudio state.
+- **🛡️ Safety Unmute:** Moving a volume fader automatically unmutes the target.
+- **🧙 Interactive Wizard:** A setup script (`configure.sh`) detects your controller input and lets you map functions without manual editing.
+- **⚡ Lightweight:** Runs as a systemd user service with zero GUI overhead.
 
+## 🛠 Prerequisites
 
-## Voraussetzungen
+You need a Linux system running **PulseAudio** or **PipeWire** (with `pipewire-pulse`).
 
-- Linux mit PulseAudio
-- bash (Shell)
-- Korg NanoKontrol2 (oder kompatibler MIDI-Controller)
-- `pactl` im Systempfad
-- Optional: `aconnect`/`amidi`/`mididings` je nach Routingbedarf
+**Dependencies:**
 
+- `alsa-utils`: Provides `aseqdump` and `amidi`.
+- `xdotool`: For media keys like Play/Pause.
+- `bc`: For volume math.
+- `pulseaudio-utils`: Provides `pactl`.
 
-## Installation
+### Installation on Arch Linux
 
-Kopiere das Skript (`midicontrol.sh`) und die Konfigurationsdatei (`midicontrol.conf`) in ein geeignetes Verzeichnis, z.B. `~/.local/bin/` bzw. `~/.config/midicontrol/`.
+`sudo pacman -S alsa-utils xdotool bc pulseaudio-utils`
 
-Mache das Skript ausführbar:
+### Installation on Debian / Ubuntu
 
-```sh
-chmod +x ~/.local/bin/midicontrol.sh
-```
+`sudo apt install alsa-utils xdotool bc pulseaudio-utils`
 
+## 📦 Installation
 
-## Konfiguration
+1. Clone the repository
+    
+    `git clone https://github.com/dbiendara/Midicontrol.git
+    cd Midicontrol`
+    
+2. Make the scripts executable
+    
+    `chmod +x midicontrol.sh configure.sh`
+    
 
-Die Datei `midicontrol.conf` enthält die Zuweisung der MIDI-Controller-Elemente zu PulseAudio-Sinks. Die genaue Syntax ist im Kopf der Datei erläutert. Beispiel:
+## ⚙️ Configuration
 
-```ini
-# midicontrol.conf
-# Format: <MIDI-CC-Nummer>=<Sink-Name>
-7=alsa_output.pci-0000_00_1b.0.analog-stereo
-8=alsa_output.usb-Generic_USB_Audio-00.analog-stereo
-...
-```
+### Option A: The Wizard (Recommended)
 
-**Wichtige Hinweise:**
+Run the configuration script to map your controller:
 
-- Die Control Change (CC)-Nummern findest du im MIDI-Datenblatt deines Controllers oder mit einem MIDI-Monitor heraus.
-- Der `Sink-Name` muss exakt mit dem PulseAudio-Sink übereinstimmen (siehe nächster Abschnitt).
+`./configure.sh`
 
+1. Move a fader or press a button on your MIDI controller.
+2. Select the desired function (Sink, Source, App, or Media Key).
+3. The script saves the mapping and automatically restarts the service.
 
-## ControlNummer herausfinden
-```sh
-aseqdump -p \"nanoKONTROL2\"
-```
-Dann am Regler drehen und die Nummer notieren.
+### Option B: Manual Configuration (`config.txt`)
 
-## PulseAudio Sink-Namen herausfinden
+The format is `CONTROLLER_ID=VALUE`.
 
-Führe folgendes Kommando im Terminal aus, um alle verfügbaren Sinks aufzulisten:
+### 1. Volume Sliders
 
-```sh
-pactl list sinks short
-```
+- **Output (Sink):** `0=alsa_output.pci-0000_0d_00.4.analog-stereo`
+- **Input (Source):** `1=source:easyeffects_source`
+- **Apps (Regex):** `2=app:spotify|vlc|mpv`
 
-Oder:
+### 2. Buttons
 
-```sh
-pacmd list-sinks | grep -e 'name:' -e 'index:'
-```
+- **Mute Toggle:** `48=mute_source:easyeffects_source` (LED lights up when muted).
+- **Media Control:** `41=play`, `42=stop`, `43=prev`, `44=next`.
+- **Sink Switch:** `46=defaultsink`.
 
-Beispielausgabe:
+### 3. Initial LED State
 
-```
-0	alsa_output.pci-0000_00_1b.0.analog-stereo
-1	alsa_output.usb-Generic_USB_Audio-00.analog-stereo
-```
+List buttons to be lit at startup: `leds=41,42,43,44`.
 
-Den Namen aus der zweiten Spalte (z. B. `alsa_output.pci-0000_00_1b.0.analog-stereo`) verwendest du in der `midicontrol.conf`.[^1][^2][^3]
+## 🖥️ Autostart (Systemd Service)
 
-## Autostart mit systemd (user service)
+1. Create the service file:
+`nano ~/.config/systemd/user/midicontrol.service`
+2. Paste the following (adjust the path!):Ini, TOML
+    
+    `[Unit]
+    Description=MIDI Control Script (nanoKONTROL2)
+    After=sound.target
+    
+    [Service]
+    Type=simple
+    ExecStart=/home/YOUR_USERNAME/path/to/Midicontrol/midicontrol.sh
+    Restart=always
+    RestartSec=3
+    
+    [Install]
+    WantedBy=default.target`
+    
+3. Enable and start:Bash
+    
+    `systemctl --user daemon-reload
+    systemctl --user enable --now midicontrol.service`
+    
 
-Lege eine Dienstdatei an, z.B. `~/.config/systemd/user/midicontrol.service`:
+## 🔍 Troubleshooting
 
-```ini
-Unit]
-Description=MIDI PulseAudio Volume Control
-After=sound.target
+- **Mute LEDs not working:** The script uses `LC_ALL=C` to force English output from `pactl`. If they still don't work, ensure your user has access to `amidi` and the MIDI port is not blocked.
+- **App Volume:** App matching is case-insensitive. Use `pactl list sink-inputs` to find the exact `application.name`.
+- **Device Busy:** Ensure no other MIDI mappers or DAWs are running that might grab exclusive control of the port.
 
-[Service]
-ExecStartPre=/bin/sleep 10
-ExecStart=/home/[USER]/scripts/midicontrol/midicontrol.sh
-Restart=always
-WorkingDirectory=/home/[USER]/scripts/midicontrol
+## 📄 License
 
-[Install]
-WantedBy=default.target
-
-```
-
-Aktiviere und starte den Dienst:
-
-```sh
-systemctl --user enable midicontrol.service
-systemctl --user start midicontrol.service
-```
-
-Der Dienst startet dann automatisch nach dem Login.[^4]
-
-**Tipp:** Überprüfe den Status falls etwas nicht funktioniert:
-
-```sh
-systemctl --user status midicontrol.service
-journalctl --user -u midicontrol.service
-```
-
-
-## Anpassung/MIDI-Zuordnung
-
-Viele Controller erlauben das Customizing der CCs über einen Editor wie den Korg Kontrol Editor. Stelle sicher, dass dein Mapping den Einträgen in der Konfigurationsdatei entspricht.[^5][^6]
-
-## Fehlerbehebung
-
-- Prüfe mit `aconnect -l` oder `amidi -l`, ob das Gerät erkannt wird.
-- Prüfe, dass dein Benutzer PulseAudio steuern darf (idR. gegeben bei normalen Desktopnutzern).
-- Prüfe die systemd-Logs auf Fehlerausgaben, falls der Autostartdienst nicht arbeitet.
-
-***
+MIT License
