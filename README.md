@@ -1,5 +1,3 @@
-# Unbenannt
-
 # Midicontrol - Advanced Linux MIDI Volume Mixer
 
 **Midicontrol** is a powerful, lightweight Bash script that turns your MIDI controller (optimized for **Korg nanoKONTROL2**) into a fully functional physical mixer for Linux audio (PulseAudio / PipeWire).
