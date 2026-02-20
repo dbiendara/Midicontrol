@@ -86,7 +86,7 @@ sync_all_mute_leds() {
 DEFAULT_SINK_INDEX=0
 switch_sink() {
   # Hier die Blacklist (Groß-/Kleinschreibung egal durch -i Flag unten)
-  BLACKLIST="easy|hdmi"
+  BLACKLIST="easy"
 
   # -i ignoriert Case-Sensitivity (findet HDMI und hdmi)
   SINKS=($(pactl list sinks short | cut -f2 | grep -viE "$BLACKLIST"))
