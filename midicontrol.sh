@@ -81,6 +81,32 @@ sync_all_mute_leds() {
     done < "$CONFIG_FILE"
 }
 
+# Default-Sink Switcher Logik mit Blacklist
+# Default-Sink Switcher Logik mit ignorierter Groß-/Kleinschreibung
+DEFAULT_SINK_INDEX=0
+switch_sink() {
+  # Hier die Blacklist (Groß-/Kleinschreibung egal durch -i Flag unten)
+  BLACKLIST="easy|hdmi"
+
+  # -i ignoriert Case-Sensitivity (findet HDMI und hdmi)
+  SINKS=($(pactl list sinks short | cut -f2 | grep -viE "$BLACKLIST"))
+
+  if [ ${#SINKS[@]} -eq 0 ]; then
+    echo "Keine passenden Sinks nach Filterung gefunden."
+    return
+  fi
+
+  DEFAULT_SINK_INDEX=$(( (DEFAULT_SINK_INDEX + 1) % ${#SINKS[@]} ))
+  local NEW_SINK="${SINKS[$DEFAULT_SINK_INDEX]}"
+  
+  pactl set-default-sink "$NEW_SINK"
+  
+  # OSD zur Bestätigung
+  local DISP_NAME=$(echo "$NEW_SINK" | sed 's/alsa_output\..*\.//')
+  qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.showProgress "audio-card-symbolic" 0 "Ausgang: $DISP_NAME"
+  
+  echo "Gewechselt zu: $NEW_SINK"
+}
 # ---------------------------------------------------------
 # Main Loop
 # ---------------------------------------------------------
