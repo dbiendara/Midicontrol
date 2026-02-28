@@ -1,0 +1,15 @@
+[Unit]
+Description=MIDI PulseAudio Volume Control
+After=sound.target
+
+[Service]
+ExecStartPre=/bin/sleep 10
+ExecStart=/home/dennis/scripts/midicontrol/midicontrol.sh
+Restart=always
+#User=dennis
+#Environment=DISPLAY=:0
+# Optional: Arbeitsverzeichnis, falls config.txt dort liegt
+WorkingDirectory=/home/dennis/scripts/midicontrol
+
+[Install]
+WantedBy=default.target

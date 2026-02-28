@@ -1,196 +1,101 @@
 #!/bin/bash
 
 CONFIG_FILE="./config.txt"
-
-# Automatische Erkennung des nanoKONTROL2 Ports
 MIDI_OUT_PORT=$(amidi -l | grep "nanoKONTROL2" | awk '{print $2}')
 
 # ---------------------------------------------------------
-# Helper Funktionen für LEDs
+# 1. Config in den RAM laden (Assoziatives Array)
+# ---------------------------------------------------------
+declare -A MAPPINGS
+while IFS='=' read -r key value; do
+    [[ "$key" =~ ^#.* ]] || [[ -z "$key" ]] && continue
+    MAPPINGS["$key"]="$value"
+done < "$CONFIG_FILE"
+
+# Array für den letzten Wert (Jitter-Schutz)
+declare -A LAST_VALUES
+
+# ---------------------------------------------------------
+# Helper Funktionen (Minimale Subshells)
 # ---------------------------------------------------------
 
 led_on() {
-    local ctrl=$1
-    if [ -n "$MIDI_OUT_PORT" ]; then
-        printf -v HEX "%02X" "$ctrl"
-        amidi -p "$MIDI_OUT_PORT" -S "B0 $HEX 7F"
-    fi
+    [ -n "$MIDI_OUT_PORT" ] && printf -v HEX "%02X" "$1" && amidi -p "$MIDI_OUT_PORT" -S "B0 $HEX 7F"
 }
 
 led_off() {
-    local ctrl=$1
-    if [ -n "$MIDI_OUT_PORT" ]; then
-        printf -v HEX "%02X" "$ctrl"
-        amidi -p "$MIDI_OUT_PORT" -S "B0 $HEX 00"
-    fi
-}
-
-# ---------------------------------------------------------
-# Konfiguration & Initialisierung
-# ---------------------------------------------------------
-
-get_mapping() {
-    local ctrl=$1
-    grep -E "^$ctrl=" "$CONFIG_FILE" | cut -d= -f2
-}
-
-init_leds() {
-    LEDS_LINE=$(grep "^leds=" "$CONFIG_FILE")
-    if [ ! -z "$LEDS_LINE" ]; then
-        LEDBTNSTR=${LEDS_LINE#leds=}
-        IFS=',' read -ra LEDBTNS <<< "$LEDBTNSTR"
-        for btn in "${LEDBTNS[@]}"; do
-            led_on "$btn"
-        done
-    fi
+    [ -n "$MIDI_OUT_PORT" ] && printf -v HEX "%02X" "$1" && amidi -p "$MIDI_OUT_PORT" -S "B0 $HEX 00"
 }
 
 update_mute_led() {
     local ctrl=$1
     local mapping=$2
-    local is_muted="no"
+    local status
     
     if [[ "$mapping" == mute_source:* ]]; then
-        REAL_SOURCE=${mapping#mute_source:}
-        STATUS=$(LC_ALL=C pactl get-source-mute "$REAL_SOURCE" 2>/dev/null)
-        
-        if [[ "$STATUS" == *"yes"* ]]; then 
-            is_muted="yes"
-        fi
-
-        # KDE Plasma 6 Fix: Trigger ohne Argumente zeigt den aktuellen Status
+        status=$(LC_ALL=C pactl get-source-mute "${mapping#mute_source:}" 2>/dev/null)
+        [[ "$status" == *"yes"* ]] && led_on "$ctrl" || led_off "$ctrl"
         qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.microphoneMuted >/dev/null 2>&1
-        
     elif [[ "$mapping" == mute_sink:* ]]; then
-        REAL_SINK=${mapping#mute_sink:}
-        STATUS=$(LC_ALL=C pactl get-sink-mute "$REAL_SINK" 2>/dev/null)
-        [[ "$STATUS" == *"yes"* ]] && is_muted="yes"
-        # Sink-Mute wird meist über das Volume-OSD mit abgedeckt
+        status=$(LC_ALL=C pactl get-sink-mute "${mapping#mute_sink:}" 2>/dev/null)
+        [[ "$status" == *"yes"* ]] && led_on "$ctrl" || led_off "$ctrl"
     fi
-
-    if [ "$is_muted" == "yes" ]; then led_on "$ctrl"; else led_off "$ctrl"; fi
 }
 
-sync_all_mute_leds() {
-    while read -r line; do
-        if [[ "$line" =~ ^([0-9]+)=mute_(source|sink): ]]; then
-            CTRL=${BASH_REMATCH[1]}
-            MAPPING=$(echo "$line" | cut -d= -f2)
-            update_mute_led "$CTRL" "$MAPPING"
-        fi
-    done < "$CONFIG_FILE"
-}
-
-# Default-Sink Switcher Logik mit Blacklist
-# Default-Sink Switcher Logik mit ignorierter Groß-/Kleinschreibung
-DEFAULT_SINK_INDEX=0
-switch_sink() {
-  # Hier die Blacklist (Groß-/Kleinschreibung egal durch -i Flag unten)
-  BLACKLIST="easy"
-
-  # -i ignoriert Case-Sensitivity (findet HDMI und hdmi)
-  SINKS=($(pactl list sinks short | cut -f2 | grep -viE "$BLACKLIST"))
-
-  if [ ${#SINKS[@]} -eq 0 ]; then
-    echo "Keine passenden Sinks nach Filterung gefunden."
-    return
-  fi
-
-  DEFAULT_SINK_INDEX=$(( (DEFAULT_SINK_INDEX + 1) % ${#SINKS[@]} ))
-  local NEW_SINK="${SINKS[$DEFAULT_SINK_INDEX]}"
-  
-  pactl set-default-sink "$NEW_SINK"
-  
-  # OSD zur Bestätigung
-  local DISP_NAME=$(echo "$NEW_SINK" | sed 's/alsa_output\..*\.//')
-  qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.showProgress "audio-card-symbolic" 0 "Ausgang: $DISP_NAME"
-  
-  echo "Gewechselt zu: $NEW_SINK"
-}
 # ---------------------------------------------------------
-# Main Loop
+# Main Loop mit Jitter-Filter
 # ---------------------------------------------------------
 
-init_leds
-sync_all_mute_leds
+# Initial LED Sync
+for key in "${!MAPPINGS[@]}"; do
+    [[ "$key" == "leds" ]] && IFS=',' read -ra LEDS <<< "${MAPPINGS[$key]}" && for b in "${LEDS[@]}"; do led_on "$b"; done
+    [[ "${MAPPINGS[$key]}" == mute_* ]] && update_mute_led "$key" "${MAPPINGS[$key]}"
+done
 
-
-# Wake-up Listener (Fix: 2>/dev/null unterdrückt die AccessDenied Meldung)
-(
-    dbus-monitor --system "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'" 2>/dev/null | while read line; do
-        if [[ "$line" == *"boolean false"* ]]; then
-            sleep 2
-            MIDI_OUT_PORT=$(amidi -l | grep "nanoKONTROL2" | awk '{print $2}')
-            init_leds
-            sync_all_mute_leds
-        fi
-    done
-) &
-WAKE_PID=$!
-
-# Cleanup: Falls das Hauptskript beendet wird, auch den Listener killen
-trap "kill $WAKE_PID 2>/dev/null; exit" EXIT
-# ------------------------------
-
-
-aseqdump -p "nanoKONTROL2" | while read LINE; do
+aseqdump -p "nanoKONTROL2" | while read -r LINE; do
     if [[ "$LINE" =~ controller\ ([0-9]+),\ value\ ([0-9]+) ]]; then
         CTRL=${BASH_REMATCH[1]}
         VALUE=${BASH_REMATCH[2]}
-        MAPPING=$(get_mapping $CTRL)
+        MAPPING=${MAPPINGS[$CTRL]}
+
+        # Jitter Filter: Nur reagieren, wenn Wert sich geändert hat
+        [[ "${LAST_VALUES[$CTRL]}" == "$VALUE" ]] && continue
+        LAST_VALUES[$CTRL]="$VALUE"
+
+        [[ -z "$MAPPING" ]] && continue
 
         case "$MAPPING" in
             play) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioPlay ;;
             stop) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioStop ;;
             prev) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioPrev ;;
             next) [ "$VALUE" -gt 0 ] && xdotool key XF86AudioNext ;;
-            defaultsink) [ "$VALUE" -gt 0 ] && switch_sink ;;
             
-            mute_source:*)
-                if [ "$VALUE" -gt 0 ]; then
-                    REAL_SOURCE=${MAPPING#mute_source:}
-                    pactl set-source-mute "$REAL_SOURCE" toggle
+            mute_source:*|mute_sink:*)
+                [ "$VALUE" -gt 0 ] && {
+                    type=${MAPPING%%:*}
+                    target=${MAPPING#*:}
+                    [[ "$type" == "mute_source" ]] && pactl set-source-mute "$target" toggle || pactl set-sink-mute "$target" toggle
                     update_mute_led "$CTRL" "$MAPPING"
-                fi
-                ;;
-            mute_sink:*)
-                if [ "$VALUE" -gt 0 ]; then
-                    REAL_SINK=${MAPPING#mute_sink:}
-                    pactl set-sink-mute "$REAL_SINK" toggle
-                    update_mute_led "$CTRL" "$MAPPING"
-                fi
+                }
                 ;;
             
             *)
-                if [ ! -z "$MAPPING" ] && [[ "$VALUE" =~ ^[0-9]+$ ]]; then
-                    VOL=$(echo "$VALUE * 100 / 127" | bc)
+                if [[ "$VALUE" =~ ^[0-9]+$ ]]; then
+                    VOL=$(( VALUE * 100 / 127 ))
                     
                     if [[ "$MAPPING" == source:* ]]; then
-                        REAL_SOURCE=${MAPPING#source:}
-                        pactl set-source-volume "$REAL_SOURCE" "${VOL}%"
-                        pactl set-source-mute "$REAL_SOURCE" 0 
-                        # KDE OSD für Mikrofon-Lautstärke
-                        qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.microphoneVolumeChanged $VOL
-                        
-                        MUTE_CTRL=$(grep "=mute_source:$REAL_SOURCE" "$CONFIG_FILE" | cut -d= -f1)
-                        [ -n "$MUTE_CTRL" ] && update_mute_led "$MUTE_CTRL" "mute_source:$REAL_SOURCE"
-
+                        target=${MAPPING#source:}
+                        pactl set-source-volume "$target" "${VOL}%"
+                        pactl set-source-mute "$target" 0
+                        qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.microphoneVolumeChanged "$VOL"
                     elif [[ "$MAPPING" == app:* ]]; then
-                        # ... App-Logik bleibt gleich ...
-                        APP_SEARCH=${MAPPING#app:}
-                        PIDS=$(pactl list sink-inputs | awk -v app="$APP_SEARCH" 'BEGIN {IGNORECASE=1} /^Sink Input/ {id=$3} /application.name/ && $0 ~ app {print id} /media.name/ && $0 ~ app {print id}' | tr -d '#' | sort -u)
-                        if [ ! -z "$PIDS" ]; then
-                            for PID in $PIDS; do pactl set-sink-input-volume "$PID" "${VOL}%"; done
-                        fi
+                        search=${MAPPING#app:}
+                        pids=$(pactl list sink-inputs | awk -v app="$search" 'BEGIN {IGNORECASE=1} /^Sink Input/ {id=$3} /application.name/ && $0 ~ app {print id} /media.name/ && $0 ~ app {print id}' | tr -d '#')
+                        for pid in $pids; do pactl set-sink-input-volume "$pid" "${VOL}%"; done
                     else
-                        # SINK (Standard Lautsprecher)
                         pactl set-sink-volume "$MAPPING" "${VOL}%"
                         pactl set-sink-mute "$MAPPING" 0
-                        # KDE OSD für Master/Sink-Lautstärke
-                        qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.volumeChanged $VOL
-                        
-                        MUTE_CTRL=$(grep "=mute_sink:$MAPPING" "$CONFIG_FILE" | cut -d= -f1)
-                        [ -n "$MUTE_CTRL" ] && update_mute_led "$MUTE_CTRL" "mute_sink:$MAPPING"
+                        qdbus6 org.kde.plasmashell /org/kde/osdService org.kde.osdService.volumeChanged "$VOL"
                     fi
                 fi
                 ;;
